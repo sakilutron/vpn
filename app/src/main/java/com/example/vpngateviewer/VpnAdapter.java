@@ -8,6 +8,8 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.vpngateviewer.CountryFlagUtils;
+
 import java.util.List;
 import java.util.Locale;
 
@@ -17,7 +19,8 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
     private final OnItemClickListener listener;
 
     public interface OnItemClickListener {
-        void onItemClick(VpnServer server);
+        void onServerClick(VpnServer server);
+        void onFavoriteToggle(VpnServer server);
     }
 
     public VpnAdapter(List<VpnServer> vpnServerList, OnItemClickListener listener) {
@@ -49,30 +52,46 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
     }
 
     static class VpnViewHolder extends RecyclerView.ViewHolder {
+        TextView countryFlag;
         TextView country;
         TextView ipAddress;
         TextView speed;
         TextView ping;
+        TextView favoriteToggle;
+        View newBadge;
 
         public VpnViewHolder(@NonNull View itemView) {
             super(itemView);
+            countryFlag = itemView.findViewById(R.id.country_flag);
             country = itemView.findViewById(R.id.country);
-            ipAddress = itemView.findViewById(R.id.ipAddress);
+            ipAddress = itemView.findViewById(R.id.ip_address);
             speed = itemView.findViewById(R.id.speed);
             ping = itemView.findViewById(R.id.ping);
+            favoriteToggle = itemView.findViewById(R.id.favorite_toggle);
+            newBadge = itemView.findViewById(R.id.new_badge);
         }
 
         public void bind(final VpnServer server, final OnItemClickListener listener) {
-            country.setText(server.getCountryLong());
+            countryFlag.setText(CountryFlagUtils.countryCodeToFlag(server.getCountryShort()));
+            country.setText(server.getCountryLong() + " (" + server.getCountryShort() + ")");
             ipAddress.setText("IP: " + server.getIp());
             
             // Speed is in bps, convert to Mbps
             double speedMbps = server.getSpeed() / 1000000.0;
             speed.setText(String.format(Locale.getDefault(), "Speed: %.2f Mbps", speedMbps));
-            
+
             ping.setText("Ping: " + server.getPing() + " ms");
 
-            itemView.setOnClickListener(v -> listener.onItemClick(server));
+            itemView.setOnClickListener(v -> listener.onServerClick(server));
+
+            favoriteToggle.setText(server.isFavorite() ? "★" : "☆");
+            favoriteToggle.setOnClickListener(v -> {
+                server.setFavorite(!server.isFavorite());
+                favoriteToggle.setText(server.isFavorite() ? "★" : "☆");
+                listener.onFavoriteToggle(server);
+            });
+
+            newBadge.setVisibility(server.isNewlyAdded() ? View.VISIBLE : View.GONE);
         }
     }
 }

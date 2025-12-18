@@ -37,37 +37,48 @@ public class VpnGateClient {
                 String[] parts = line.split(",");
                 // Basic validation: ensure we have enough columns (15 columns based on the header)
                 if (parts.length >= 15) {
-                   try {
-                       String hostName = parts[0];
-                       String ip = parts[1];
-                       int score = Integer.parseInt(parts[2]);
-                       int ping = Integer.parseInt(parts[3]);
-                       long speed = Long.parseLong(parts[4]);
-                       String countryLong = parts[5];
-                       String countryShort = parts[6];
-                       long numVpnSessions = Long.parseLong(parts[7]);
-                       long uptime = Long.parseLong(parts[8]);
-                       long totalUsers = Long.parseLong(parts[9]);
-                       long totalTraffic = Long.parseLong(parts[10]);
-                       String logType = parts[11];
-                       String operator = parts[12];
-                       String message = parts[13];
-                       String openVPNConfigDataBase64 = parts[14];
+                    String hostName = parts[0];
+                    String ip = parts[1];
+                    int score = parseIntSafe(parts[2]);
+                    int ping = parseIntSafe(parts[3]);
+                    long speed = parseLongSafe(parts[4]);
+                    String countryLong = parts[5];
+                    String countryShort = parts[6];
+                    long numVpnSessions = parseLongSafe(parts[7]);
+                    long uptime = parseLongSafe(parts[8]);
+                    long totalUsers = parseLongSafe(parts[9]);
+                    long totalTraffic = parseLongSafe(parts[10]);
+                    String logType = parts[11];
+                    String operator = parts[12];
+                    String message = parts[13];
+                    String openVPNConfigDataBase64 = parts[14];
 
-                       VpnServer server = new VpnServer(
-                               hostName, ip, score, ping, speed, countryLong, countryShort,
-                               numVpnSessions, uptime, totalUsers, totalTraffic, logType,
-                               operator, message, openVPNConfigDataBase64
-                       );
-                       vpnServers.add(server);
-                   } catch (NumberFormatException e) {
-                       // Skip malformed lines
-                       System.err.println("Skipping malformed line: " + line);
-                   }
+                    VpnServer server = new VpnServer(
+                            hostName, ip, score, ping, speed, countryLong, countryShort,
+                            numVpnSessions, uptime, totalUsers, totalTraffic, logType,
+                            operator, message, openVPNConfigDataBase64
+                    );
+                    vpnServers.add(server);
                 }
             }
         }
-        
+
         return vpnServers;
+    }
+
+    private int parseIntSafe(String value) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private long parseLongSafe(String value) {
+        try {
+            return Long.parseLong(value.trim());
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 }
