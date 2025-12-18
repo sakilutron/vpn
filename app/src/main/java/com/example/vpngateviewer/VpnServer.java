@@ -18,6 +18,8 @@ public class VpnServer implements Serializable {
     private String operator;
     private String message;
     private String openVPNConfigDataBase64;
+    private boolean favorite;
+    private boolean newlyAdded;
 
     public VpnServer(String hostName, String ip, int score, int ping, long speed, String countryLong, String countryShort, long numVpnSessions, long uptime, long totalUsers, long totalTraffic, String logType, String operator, String message, String openVPNConfigDataBase64) {
         this.hostName = hostName;
@@ -35,6 +37,26 @@ public class VpnServer implements Serializable {
         this.operator = operator;
         this.message = message;
         this.openVPNConfigDataBase64 = openVPNConfigDataBase64;
+    }
+
+    public void setFavorite(boolean favorite) {
+        this.favorite = favorite;
+    }
+
+    public boolean isFavorite() {
+        return favorite;
+    }
+
+    public void setNewlyAdded(boolean newlyAdded) {
+        this.newlyAdded = newlyAdded;
+    }
+
+    public boolean isNewlyAdded() {
+        return newlyAdded;
+    }
+
+    public String getCacheKey() {
+        return ip != null ? ip : hostName;
     }
 
     public String getHostName() {
