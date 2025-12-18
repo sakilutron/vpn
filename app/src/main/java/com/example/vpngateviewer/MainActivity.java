@@ -45,7 +45,7 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private List<VpnServer> latestServers = new ArrayList<>();
     private boolean isFetching = false;
     private final Runnable refreshRunnable = this::refreshVpnData;
-    private static final long REFRESH_INTERVAL_MS = 10_000L;
+    private static final long REFRESH_INTERVAL_MS = 30_000L;
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final VpnGateClient vpnGateClient = new VpnGateClient();
@@ -144,6 +144,7 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private void setupCountryTabs(List<VpnServer> servers) {
         Map<String, List<VpnServer>> groupedByCountry = new LinkedHashMap<>();
         Set<String> nextCachedKeys = new HashSet<>();
+        List<VpnServer> favoriteServers = new ArrayList<>();
         Comparator<VpnServer> sortingComparator = Comparator
                 .comparing(VpnServer::isNewlyAdded, Comparator.reverseOrder())
                 .thenComparing(VpnServer::isFavorite, Comparator.reverseOrder())
@@ -155,11 +156,17 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             server.setNewlyAdded(isNew);
             boolean isFavorite = favoriteServerKeys.contains(cacheKey);
             server.setFavorite(isFavorite);
+            if (isFavorite) {
+                favoriteServers.add(server);
+            }
             nextCachedKeys.add(cacheKey);
             groupedByCountry.computeIfAbsent(countryCode, key -> new ArrayList<>()).add(server);
         }
 
         List<CountryTab> countryTabs = new ArrayList<>();
+        Collections.sort(favoriteServers, sortingComparator);
+        String favoritesTitle = "★ Favorites" + (favoriteServers.isEmpty() ? "" : " (" + favoriteServers.size() + ")");
+        countryTabs.add(new CountryTab("Favorites", "FAV", favoriteServers, favoritesTitle));
         for (Map.Entry<String, List<VpnServer>> entry : groupedByCountry.entrySet()) {
             List<VpnServer> sortedServers = new ArrayList<>(entry.getValue());
             Collections.sort(sortedServers, sortingComparator);
@@ -168,13 +175,20 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             countryTabs.add(new CountryTab(countryName, countryCode, sortedServers));
         }
 
-        Collections.sort(countryTabs, (left, right) -> {
+        List<CountryTab> sortedTabs = new ArrayList<>();
+        if (!countryTabs.isEmpty()) {
+            sortedTabs.add(countryTabs.get(0));
+        }
+
+        Collections.sort(countryTabs.subList(1, countryTabs.size()), (left, right) -> {
             if (left.getCountryCode().equalsIgnoreCase("US")) return -1;
             if (right.getCountryCode().equalsIgnoreCase("US")) return 1;
             return left.getCountryName().compareTo(right.getCountryName());
         });
 
-        countryPagerAdapter = new CountryPagerAdapter(this, countryTabs);
+        sortedTabs.addAll(countryTabs.subList(1, countryTabs.size()));
+
+        countryPagerAdapter = new CountryPagerAdapter(this, sortedTabs);
         viewPager.setAdapter(countryPagerAdapter);
         new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> tab.setText(countryPagerAdapter.getPageTitle(position))).attach();
 
@@ -219,11 +233,7 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             intent.setDataAndType(contentUri, "application/x-openvpn-profile");
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-            if (intent.resolveActivity(getPackageManager()) != null) {
-                startActivity(intent);
-            } else {
-                Toast.makeText(this, "No VPN app found. Please install an OpenVPN client.", Toast.LENGTH_LONG).show();
-            }
+            startActivity(intent);
 
         } catch (IOException | IllegalArgumentException e) {
             e.printStackTrace();
