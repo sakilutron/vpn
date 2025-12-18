@@ -59,9 +59,9 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
 
         public VpnViewHolder(@NonNull View itemView) {
             super(itemView);
-            countryFlag = itemView.findViewById(R.id.countryFlag);
+            countryFlag = itemView.findViewById(R.id.country_flag);
             country = itemView.findViewById(R.id.country);
-            ipAddress = itemView.findViewById(R.id.ipAddress);
+            ipAddress = itemView.findViewById(R.id.ip_address);
             speed = itemView.findViewById(R.id.speed);
             ping = itemView.findViewById(R.id.ping);
         }
