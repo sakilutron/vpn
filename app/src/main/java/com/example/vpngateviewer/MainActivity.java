@@ -41,6 +41,9 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private CountryPagerAdapter countryPagerAdapter;
     private Set<String> cachedServerKeys;
     private Set<String> favoriteServerKeys;
+    private boolean isFetching = false;
+    private final Runnable refreshRunnable = this::refreshVpnData;
+    private static final long REFRESH_INTERVAL_MS = 30_000L;
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final VpnGateClient vpnGateClient = new VpnGateClient();
@@ -60,13 +63,47 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         favoriteServerKeys = new HashSet<>(getSharedPreferences("vpn_prefs", MODE_PRIVATE)
                 .getStringSet("favorite_servers", new HashSet<>()));
 
-        fetchVpnData();
+        fetchVpnData(true);
     }
 
-    private void fetchVpnData() {
-        progressBar.setVisibility(View.VISIBLE);
-        errorText.setVisibility(View.GONE);
-        viewPager.setVisibility(View.GONE);
+    @Override
+    protected void onResume() {
+        super.onResume();
+        scheduleNextRefresh();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mainHandler.removeCallbacks(refreshRunnable);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mainHandler.removeCallbacks(refreshRunnable);
+        executorService.shutdownNow();
+    }
+
+    private void refreshVpnData() {
+        if (isFetching) {
+            scheduleNextRefresh();
+            return;
+        }
+        fetchVpnData(false);
+    }
+
+    private void fetchVpnData(boolean showLoading) {
+        if (isFetching) {
+            return;
+        }
+        isFetching = true;
+
+        if (showLoading) {
+            progressBar.setVisibility(View.VISIBLE);
+            errorText.setVisibility(View.GONE);
+            viewPager.setVisibility(View.GONE);
+        }
 
         executorService.execute(() -> {
             try {
@@ -80,6 +117,8 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                         setupCountryTabs(servers);
                         viewPager.setVisibility(View.VISIBLE);
                     }
+                    scheduleNextRefresh();
+                    isFetching = false;
                 });
             } catch (Exception e) {
                 e.printStackTrace();
@@ -87,6 +126,8 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                     progressBar.setVisibility(View.GONE);
                     errorText.setText("Error loading data: " + e.getMessage());
                     errorText.setVisibility(View.VISIBLE);
+                    scheduleNextRefresh();
+                    isFetching = false;
                 });
             }
         });
@@ -135,6 +176,11 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                 .apply();
     }
 
+    private void scheduleNextRefresh() {
+        mainHandler.removeCallbacks(refreshRunnable);
+        mainHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL_MS);
+    }
+
     private void onConnectClick(VpnServer server) {
         String base64Config = server.getOpenVPNConfigDataBase64();
         if (base64Config == null || base64Config.isEmpty()) {
@@ -148,8 +194,11 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             if (!cachePath.exists()) {
                 cachePath.mkdirs();
             }
-            String filename = "vpngate_" + server.getIp().replace(".", "_") + ".ovpn";
-            File newFile = new File(cachePath, filename);
+            String baseFilename = "vpngate_" + server.getIp().replace(".", "_");
+            File newFile = new File(cachePath, baseFilename + ".ovpn");
+            if (newFile.exists()) {
+                newFile = new File(cachePath, baseFilename + "_" + System.currentTimeMillis() + ".ovpn");
+            }
 
             try (FileOutputStream fos = new FileOutputStream(newFile)) {
                 fos.write(configData);
