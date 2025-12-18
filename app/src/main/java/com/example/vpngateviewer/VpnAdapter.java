@@ -8,8 +8,6 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.example.vpngateviewer.CountryFlagUtils;
-
 import java.util.List;
 import java.util.Locale;
 
@@ -51,7 +49,6 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
     }
 
     static class VpnViewHolder extends RecyclerView.ViewHolder {
-        TextView countryFlag;
         TextView country;
         TextView ipAddress;
         TextView speed;
@@ -59,7 +56,6 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
 
         public VpnViewHolder(@NonNull View itemView) {
             super(itemView);
-            countryFlag = itemView.findViewById(R.id.countryFlag);
             country = itemView.findViewById(R.id.country);
             ipAddress = itemView.findViewById(R.id.ipAddress);
             speed = itemView.findViewById(R.id.speed);
@@ -67,8 +63,7 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
         }
 
         public void bind(final VpnServer server, final OnItemClickListener listener) {
-            countryFlag.setText(CountryFlagUtils.countryCodeToFlag(server.getCountryShort()));
-            country.setText(server.getCountryLong() + " (" + server.getCountryShort() + ")");
+            country.setText(server.getCountryLong());
             ipAddress.setText("IP: " + server.getIp());
             
             // Speed is in bps, convert to Mbps
