@@ -20,6 +20,7 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
 
     public interface OnItemClickListener {
         void onItemClick(VpnServer server);
+        void onFavoriteToggle(VpnServer server);
     }
 
     public VpnAdapter(List<VpnServer> vpnServerList, OnItemClickListener listener) {
@@ -56,6 +57,8 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
         TextView ipAddress;
         TextView speed;
         TextView ping;
+        TextView favoriteToggle;
+        View newBadge;
 
         public VpnViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -64,6 +67,8 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
             ipAddress = itemView.findViewById(R.id.ip_address);
             speed = itemView.findViewById(R.id.speed);
             ping = itemView.findViewById(R.id.ping);
+            favoriteToggle = itemView.findViewById(R.id.favorite_toggle);
+            newBadge = itemView.findViewById(R.id.new_badge);
         }
 
         public void bind(final VpnServer server, final OnItemClickListener listener) {
@@ -74,10 +79,19 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
             // Speed is in bps, convert to Mbps
             double speedMbps = server.getSpeed() / 1000000.0;
             speed.setText(String.format(Locale.getDefault(), "Speed: %.2f Mbps", speedMbps));
-            
+
             ping.setText("Ping: " + server.getPing() + " ms");
 
             itemView.setOnClickListener(v -> listener.onItemClick(server));
+
+            favoriteToggle.setText(server.isFavorite() ? "★" : "☆");
+            favoriteToggle.setOnClickListener(v -> {
+                server.setFavorite(!server.isFavorite());
+                favoriteToggle.setText(server.isFavorite() ? "★" : "☆");
+                listener.onFavoriteToggle(server);
+            });
+
+            newBadge.setVisibility(server.isNewlyAdded() ? View.VISIBLE : View.GONE);
         }
     }
 }
