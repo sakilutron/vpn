@@ -38,11 +38,9 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private ViewPager2 viewPager;
     private ProgressBar progressBar;
     private TextView errorText;
-    private View refreshButton;
     private CountryPagerAdapter countryPagerAdapter;
     private Set<String> cachedServerKeys;
     private Set<String> favoriteServerKeys;
-    private List<VpnServer> latestServers = new ArrayList<>();
     private boolean isFetching = false;
     private final Runnable refreshRunnable = this::refreshVpnData;
     private static final long REFRESH_INTERVAL_MS = 30_000L;
@@ -59,8 +57,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         viewPager = findViewById(R.id.viewPager);
         progressBar = findViewById(R.id.progressBar);
         errorText = findViewById(R.id.errorText);
-        refreshButton = findViewById(R.id.refreshButton);
-        refreshButton.setOnClickListener(v -> fetchVpnData(true));
 
         cachedServerKeys = new HashSet<>(getSharedPreferences("vpn_prefs", MODE_PRIVATE)
                 .getStringSet("cached_servers", new HashSet<>()));
@@ -102,7 +98,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             return;
         }
         isFetching = true;
-        refreshButton.setEnabled(false);
 
         if (showLoading) {
             progressBar.setVisibility(View.VISIBLE);
@@ -114,7 +109,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             try {
                 List<VpnServer> servers = vpnGateClient.fetchVpnServers();
                 mainHandler.post(() -> {
-                    latestServers = new ArrayList<>(servers);
                     progressBar.setVisibility(View.GONE);
                     if (servers.isEmpty()) {
                         errorText.setText("No VPN servers found.");
@@ -123,7 +117,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                         setupCountryTabs(servers);
                         viewPager.setVisibility(View.VISIBLE);
                     }
-                    refreshButton.setEnabled(true);
                     scheduleNextRefresh();
                     isFetching = false;
                 });
@@ -133,7 +126,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                     progressBar.setVisibility(View.GONE);
                     errorText.setText("Error loading data: " + e.getMessage());
                     errorText.setVisibility(View.VISIBLE);
-                    refreshButton.setEnabled(true);
                     scheduleNextRefresh();
                     isFetching = false;
                 });
@@ -144,11 +136,6 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private void setupCountryTabs(List<VpnServer> servers) {
         Map<String, List<VpnServer>> groupedByCountry = new LinkedHashMap<>();
         Set<String> nextCachedKeys = new HashSet<>();
-        List<VpnServer> favoriteServers = new ArrayList<>();
-        Comparator<VpnServer> sortingComparator = Comparator
-                .comparing(VpnServer::isNewlyAdded, Comparator.reverseOrder())
-                .thenComparing(VpnServer::isFavorite, Comparator.reverseOrder())
-                .thenComparingInt(VpnServer::getPing);
         for (VpnServer server : servers) {
             String countryCode = server.getCountryShort();
             String cacheKey = server.getCacheKey();
@@ -156,39 +143,29 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
             server.setNewlyAdded(isNew);
             boolean isFavorite = favoriteServerKeys.contains(cacheKey);
             server.setFavorite(isFavorite);
-            if (isFavorite) {
-                favoriteServers.add(server);
-            }
             nextCachedKeys.add(cacheKey);
             groupedByCountry.computeIfAbsent(countryCode, key -> new ArrayList<>()).add(server);
         }
 
         List<CountryTab> countryTabs = new ArrayList<>();
-        Collections.sort(favoriteServers, sortingComparator);
-        String favoritesTitle = "★ Favorites" + (favoriteServers.isEmpty() ? "" : " (" + favoriteServers.size() + ")");
-        countryTabs.add(new CountryTab("Favorites", "FAV", favoriteServers, favoritesTitle));
         for (Map.Entry<String, List<VpnServer>> entry : groupedByCountry.entrySet()) {
             List<VpnServer> sortedServers = new ArrayList<>(entry.getValue());
-            Collections.sort(sortedServers, sortingComparator);
+            Collections.sort(sortedServers, Comparator
+                    .comparing(VpnServer::isNewlyAdded, Comparator.reverseOrder())
+                    .thenComparing(VpnServer::isFavorite, Comparator.reverseOrder())
+                    .thenComparingInt(VpnServer::getPing));
             String countryCode = entry.getKey();
             String countryName = sortedServers.isEmpty() ? countryCode : sortedServers.get(0).getCountryLong();
             countryTabs.add(new CountryTab(countryName, countryCode, sortedServers));
         }
 
-        List<CountryTab> sortedTabs = new ArrayList<>();
-        if (!countryTabs.isEmpty()) {
-            sortedTabs.add(countryTabs.get(0));
-        }
-
-        Collections.sort(countryTabs.subList(1, countryTabs.size()), (left, right) -> {
+        Collections.sort(countryTabs, (left, right) -> {
             if (left.getCountryCode().equalsIgnoreCase("US")) return -1;
             if (right.getCountryCode().equalsIgnoreCase("US")) return 1;
             return left.getCountryName().compareTo(right.getCountryName());
         });
 
-        sortedTabs.addAll(countryTabs.subList(1, countryTabs.size()));
-
-        countryPagerAdapter = new CountryPagerAdapter(this, sortedTabs);
+        countryPagerAdapter = new CountryPagerAdapter(this, countryTabs);
         viewPager.setAdapter(countryPagerAdapter);
         new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> tab.setText(countryPagerAdapter.getPageTitle(position))).attach();
 
@@ -262,6 +239,5 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                 .putStringSet("favorite_servers", new HashSet<>(favoriteServerKeys))
                 .apply();
         Toast.makeText(this, server.isFavorite() ? "Added to favorites" : "Removed from favorites", Toast.LENGTH_SHORT).show();
-        setupCountryTabs(new ArrayList<>(latestServers));
     }
 }

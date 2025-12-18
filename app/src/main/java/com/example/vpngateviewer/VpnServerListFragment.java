@@ -5,7 +5,6 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -26,7 +25,6 @@ public class VpnServerListFragment extends Fragment {
     private String countryName;
     private String countryCode;
     private VpnAdapter.OnItemClickListener listener;
-    private TextView emptyText;
 
     public interface OnVpnServerClickListener extends VpnAdapter.OnItemClickListener {}
 
@@ -74,15 +72,10 @@ public class VpnServerListFragment extends Fragment {
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        emptyText = view.findViewById(R.id.emptyText);
         RecyclerView recyclerView = view.findViewById(R.id.vpnRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
         VpnAdapter vpnAdapter = new VpnAdapter(vpnServers, listener);
         recyclerView.setAdapter(vpnAdapter);
-
-        boolean hasServers = vpnServers != null && !vpnServers.isEmpty();
-        recyclerView.setVisibility(hasServers ? View.VISIBLE : View.GONE);
-        emptyText.setVisibility(hasServers ? View.GONE : View.VISIBLE);
     }
 
     public String getCountryTitleWithFlag() {
