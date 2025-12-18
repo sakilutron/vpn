@@ -19,7 +19,7 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
     private final OnItemClickListener listener;
 
     public interface OnItemClickListener {
-        void onItemClick(VpnServer server);
+        void onServerClick(VpnServer server);
         void onFavoriteToggle(VpnServer server);
     }
 
@@ -82,7 +82,7 @@ public class VpnAdapter extends RecyclerView.Adapter<VpnAdapter.VpnViewHolder> {
 
             ping.setText("Ping: " + server.getPing() + " ms");
 
-            itemView.setOnClickListener(v -> listener.onItemClick(server));
+            itemView.setOnClickListener(v -> listener.onServerClick(server));
 
             favoriteToggle.setText(server.isFavorite() ? "★" : "☆");
             favoriteToggle.setOnClickListener(v -> {

@@ -173,7 +173,7 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     }
 
     @Override
-    public void onItemClick(VpnServer server) {
+    public void onServerClick(VpnServer server) {
         onConnectClick(server);
     }
 
@@ -190,10 +190,5 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                 .putStringSet("favorite_servers", new HashSet<>(favoriteServerKeys))
                 .apply();
         Toast.makeText(this, server.isFavorite() ? "Added to favorites" : "Removed from favorites", Toast.LENGTH_SHORT).show();
-    }
-
-    @Override
-    public void onItemClick(VpnServer server) {
-        onConnectClick(server);
     }
 }
