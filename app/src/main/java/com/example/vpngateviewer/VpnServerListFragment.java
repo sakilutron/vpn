@@ -12,28 +12,36 @@ import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+/**
+ * Fragment displaying VPN servers for a single country tab.
+ * <p>
+ * Receives only a tab-position index via arguments and looks up data from
+ * the parent {@link CountryPagerAdapter} — avoiding Java {@code Serializable}
+ * overhead that would serialize the entire server list into the Bundle.
+ */
 public class VpnServerListFragment extends Fragment {
 
-    private static final String ARG_COUNTRY_NAME = "arg_country_name";
-    private static final String ARG_COUNTRY_CODE = "arg_country_code";
-    private static final String ARG_SERVERS = "arg_servers";
+    private static final String ARG_TAB_INDEX = "tab_index";
 
-    private List<VpnServer> vpnServers = new ArrayList<>();
-    private String countryName;
-    private String countryCode;
-    private VpnAdapter.OnItemClickListener listener;
+    private List<VpnServer> vpnServers = Collections.emptyList();
+    private String countryName = "";
+    private String countryCode = "";
+    private OnVpnServerClickListener listener;
+    private VpnAdapter vpnAdapter;
 
     public interface OnVpnServerClickListener extends VpnAdapter.OnItemClickListener {}
 
-    public static VpnServerListFragment newInstance(String countryName, String countryCode, ArrayList<VpnServer> servers) {
+    /**
+     * Creates a new instance keyed by tab position.
+     * Data is resolved at creation time from the owning CountryPagerAdapter.
+     */
+    static VpnServerListFragment newInstance(int tabIndex) {
         VpnServerListFragment fragment = new VpnServerListFragment();
         Bundle args = new Bundle();
-        args.putString(ARG_COUNTRY_NAME, countryName);
-        args.putString(ARG_COUNTRY_CODE, countryCode);
-        args.putSerializable(ARG_SERVERS, servers);
+        args.putInt(ARG_TAB_INDEX, tabIndex);
         fragment.setArguments(args);
         return fragment;
     }
@@ -44,7 +52,8 @@ public class VpnServerListFragment extends Fragment {
         if (context instanceof OnVpnServerClickListener) {
             listener = (OnVpnServerClickListener) context;
         } else {
-            throw new IllegalStateException("Hosting activity must implement OnVpnServerClickListener");
+            throw new IllegalStateException(
+                    "Hosting activity must implement OnVpnServerClickListener");
         }
     }
 
@@ -52,20 +61,36 @@ public class VpnServerListFragment extends Fragment {
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Bundle args = getArguments();
-        if (args != null) {
-            countryName = args.getString(ARG_COUNTRY_NAME);
-            countryCode = args.getString(ARG_COUNTRY_CODE);
-            Object servers = args.getSerializable(ARG_SERVERS);
-            if (servers instanceof ArrayList) {
-                //noinspection unchecked
-                vpnServers = (ArrayList<VpnServer>) servers;
+        if (args == null) {
+            return;
+        }
+
+        int tabIndex = args.getInt(ARG_TAB_INDEX, -1);
+        if (tabIndex < 0) {
+            return;
+        }
+
+        // Resolve data from the hosting activity's adapter to avoid Serializable
+        Context ctx = getContext();
+        if (ctx instanceof MainActivity) {
+            CountryPagerAdapter adapter =
+                    ((MainActivity) ctx).getCountryPagerAdapter();
+            if (adapter != null && tabIndex < adapter.getItemCount()) {
+                CountryTab tab = adapter.getCountryTab(tabIndex);
+                if (tab != null) {
+                    vpnServers = tab.getServers();
+                    countryName = tab.getCountryName();
+                    countryCode = tab.getCountryCode();
+                }
             }
         }
     }
 
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
+    public View onCreateView(@NonNull LayoutInflater inflater,
+                             @Nullable ViewGroup container,
+                             @Nullable Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_vpn_list, container, false);
     }
 
@@ -74,10 +99,14 @@ public class VpnServerListFragment extends Fragment {
         super.onViewCreated(view, savedInstanceState);
         RecyclerView recyclerView = view.findViewById(R.id.vpnRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(getContext()));
-        VpnAdapter vpnAdapter = new VpnAdapter(vpnServers, listener);
+        recyclerView.setHasFixedSize(true);
+
+        vpnAdapter = new VpnAdapter(listener);
         recyclerView.setAdapter(vpnAdapter);
+        vpnAdapter.submitList(vpnServers);
     }
 
+    /** Returns a display label with the country flag emoji. */
     public String getCountryTitleWithFlag() {
         String flag = CountryFlagUtils.countryCodeToFlag(countryCode);
         return (flag.isEmpty() ? "" : flag + " ") + countryName;
