@@ -6,11 +6,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
+import android.util.Log;
 import android.view.View;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
 import androidx.viewpager2.widget.ViewPager2;
@@ -31,8 +33,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class MainActivity extends AppCompatActivity implements VpnServerListFragment.OnVpnServerClickListener {
+public class MainActivity extends AppCompatActivity
+        implements VpnServerListFragment.OnVpnServerClickListener {
+
+    private static final String TAG = "MainActivity";
+    private static final String PREF_NAME = "vpn_prefs";
+    private static final String KEY_CACHED_SERVERS = "cached_servers";
+    private static final String KEY_FAVORITE_SERVERS = "favorite_servers";
+    private static final long REFRESH_INTERVAL_MS = 30_000L;
+    private static final String FILE_PROVIDER_AUTHORITY =
+            "com.example.vpngateviewer.fileprovider";
+    private static final String VPN_PROFILES_DIR = "vpn_profiles";
 
     private TabLayout tabLayout;
     private ViewPager2 viewPager;
@@ -41,12 +54,18 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     private CountryPagerAdapter countryPagerAdapter;
     private Set<String> cachedServerKeys;
     private Set<String> favoriteServerKeys;
-    private boolean isFetching = false;
+    private final AtomicBoolean isFetching = new AtomicBoolean(false);
     private final Runnable refreshRunnable = this::refreshVpnData;
-    private static final long REFRESH_INTERVAL_MS = 30_000L;
-    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
+    private final ExecutorService executorService =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "vpn-fetch-thread");
+                t.setDaemon(true);
+                return t;
+            });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final VpnGateClient vpnGateClient = new VpnGateClient();
+
+    // ---- lifecycle ----
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,10 +77,16 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         progressBar = findViewById(R.id.progressBar);
         errorText = findViewById(R.id.errorText);
 
-        cachedServerKeys = new HashSet<>(getSharedPreferences("vpn_prefs", MODE_PRIVATE)
-                .getStringSet("cached_servers", new HashSet<>()));
-        favoriteServerKeys = new HashSet<>(getSharedPreferences("vpn_prefs", MODE_PRIVATE)
-                .getStringSet("favorite_servers", new HashSet<>()));
+        Set<String> emptySet = new HashSet<>();
+        cachedServerKeys = new HashSet<>(
+                getSharedPreferences(PREF_NAME, MODE_PRIVATE)
+                        .getStringSet(KEY_CACHED_SERVERS, emptySet));
+        favoriteServerKeys = new HashSet<>(
+                getSharedPreferences(PREF_NAME, MODE_PRIVATE)
+                        .getStringSet(KEY_FAVORITE_SERVERS, emptySet));
+
+        countryPagerAdapter = new CountryPagerAdapter(this);
+        viewPager.setAdapter(countryPagerAdapter);
 
         fetchVpnData(true);
     }
@@ -85,8 +110,17 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         executorService.shutdownNow();
     }
 
+    // ---- public API for fragments ----
+
+    @Nullable
+    public CountryPagerAdapter getCountryPagerAdapter() {
+        return countryPagerAdapter;
+    }
+
+    // ---- data fetching ----
+
     private void refreshVpnData() {
-        if (isFetching) {
+        if (isFetching.get()) {
             scheduleNextRefresh();
             return;
         }
@@ -94,10 +128,10 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
     }
 
     private void fetchVpnData(boolean showLoading) {
-        if (isFetching) {
+        if (!isFetching.compareAndSet(false, true)) {
+            Log.d(TAG, "Skipping fetch — already in progress");
             return;
         }
-        isFetching = true;
 
         if (showLoading) {
             progressBar.setVisibility(View.VISIBLE);
@@ -106,45 +140,51 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         }
 
         executorService.execute(() -> {
+            List<VpnServer> servers;
             try {
-                List<VpnServer> servers = vpnGateClient.fetchVpnServers();
-                mainHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    if (servers.isEmpty()) {
-                        errorText.setText("No VPN servers found.");
-                        errorText.setVisibility(View.VISIBLE);
-                    } else {
-                        setupCountryTabs(servers);
-                        viewPager.setVisibility(View.VISIBLE);
-                    }
-                    scheduleNextRefresh();
-                    isFetching = false;
-                });
+                servers = vpnGateClient.fetchVpnServers();
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Failed to fetch VPN servers", e);
                 mainHandler.post(() -> {
                     progressBar.setVisibility(View.GONE);
-                    errorText.setText("Error loading data: " + e.getMessage());
+                    errorText.setText(getString(R.string.error_load_failed));
                     errorText.setVisibility(View.VISIBLE);
                     scheduleNextRefresh();
-                    isFetching = false;
+                    isFetching.set(false);
                 });
+                return;
             }
+
+            mainHandler.post(() -> {
+                progressBar.setVisibility(View.GONE);
+                if (servers.isEmpty()) {
+                    errorText.setText(getString(R.string.error_no_servers));
+                    errorText.setVisibility(View.VISIBLE);
+                } else {
+                    setupCountryTabs(servers);
+                    viewPager.setVisibility(View.VISIBLE);
+                }
+                scheduleNextRefresh();
+                isFetching.set(false);
+            });
         });
     }
 
     private void setupCountryTabs(List<VpnServer> servers) {
         Map<String, List<VpnServer>> groupedByCountry = new LinkedHashMap<>();
         Set<String> nextCachedKeys = new HashSet<>();
+
         for (VpnServer server : servers) {
             String countryCode = server.getCountryShort();
             String cacheKey = server.getCacheKey();
-            boolean isNew = !cachedServerKeys.contains(cacheKey);
-            server.setNewlyAdded(isNew);
-            boolean isFavorite = favoriteServerKeys.contains(cacheKey);
-            server.setFavorite(isFavorite);
+
+            server.setNewlyAdded(!cachedServerKeys.contains(cacheKey));
+            server.setFavorite(favoriteServerKeys.contains(cacheKey));
             nextCachedKeys.add(cacheKey);
-            groupedByCountry.computeIfAbsent(countryCode, key -> new ArrayList<>()).add(server);
+
+            groupedByCountry
+                    .computeIfAbsent(countryCode, k -> new ArrayList<>())
+                    .add(server);
         }
 
         List<CountryTab> countryTabs = new ArrayList<>();
@@ -154,72 +194,96 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
                     .comparing(VpnServer::isNewlyAdded, Comparator.reverseOrder())
                     .thenComparing(VpnServer::isFavorite, Comparator.reverseOrder())
                     .thenComparingInt(VpnServer::getPing));
+
             String countryCode = entry.getKey();
-            String countryName = sortedServers.isEmpty() ? countryCode : sortedServers.get(0).getCountryLong();
+            String countryName = sortedServers.get(0).getCountryLong();
             countryTabs.add(new CountryTab(countryName, countryCode, sortedServers));
         }
 
-        Collections.sort(countryTabs, (left, right) -> {
-            if (left.getCountryCode().equalsIgnoreCase("US")) return -1;
-            if (right.getCountryCode().equalsIgnoreCase("US")) return 1;
-            return left.getCountryName().compareTo(right.getCountryName());
+        // Place US first, then alphabetical
+        Collections.sort(countryTabs, (a, b) -> {
+            if ("US".equalsIgnoreCase(a.getCountryCode())) return -1;
+            if ("US".equalsIgnoreCase(b.getCountryCode())) return 1;
+            return a.getCountryName().compareTo(b.getCountryName());
         });
 
-        countryPagerAdapter = new CountryPagerAdapter(this, countryTabs);
-        viewPager.setAdapter(countryPagerAdapter);
-        new TabLayoutMediator(tabLayout, viewPager, (tab, position) -> tab.setText(countryPagerAdapter.getPageTitle(position))).attach();
+        countryPagerAdapter.setCountryTabs(countryTabs);
+        new TabLayoutMediator(tabLayout, viewPager,
+                (tab, position) -> tab.setText(countryPagerAdapter.getPageTitle(position))
+        ).attach();
 
         cachedServerKeys = nextCachedKeys;
-        getSharedPreferences("vpn_prefs", MODE_PRIVATE)
+        getSharedPreferences(PREF_NAME, MODE_PRIVATE)
                 .edit()
-                .putStringSet("cached_servers", new HashSet<>(cachedServerKeys))
+                .putStringSet(KEY_CACHED_SERVERS, new HashSet<>(cachedServerKeys))
                 .apply();
     }
+
+    // ---- periodic refresh ----
 
     private void scheduleNextRefresh() {
         mainHandler.removeCallbacks(refreshRunnable);
         mainHandler.postDelayed(refreshRunnable, REFRESH_INTERVAL_MS);
     }
 
+    // ---- VPN connect ----
+
     private void onConnectClick(VpnServer server) {
         String base64Config = server.getOpenVPNConfigDataBase64();
         if (base64Config == null || base64Config.isEmpty()) {
-            Toast.makeText(this, "No OpenVPN config available for this server.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.error_no_config, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        try {
-            byte[] configData = Base64.decode(base64Config, Base64.DEFAULT);
-            File cachePath = new File(getCacheDir(), "vpn_profiles");
-            if (!cachePath.exists()) {
-                cachePath.mkdirs();
+        executorService.execute(() -> {
+            try {
+                byte[] configData = Base64.decode(base64Config, Base64.DEFAULT);
+
+                File cacheDir = new File(getCacheDir(), VPN_PROFILES_DIR);
+                if (!cacheDir.exists() && !cacheDir.mkdirs()) {
+                    mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                            R.string.error_file_creation, Toast.LENGTH_SHORT).show());
+                    return;
+                }
+
+                String baseFilename = "vpngate_" + server.getIp().replace(".", "_");
+                File configFile = new File(cacheDir, baseFilename + ".ovpn");
+                if (configFile.exists()) {
+                    configFile = new File(cacheDir,
+                            baseFilename + "_" + System.currentTimeMillis() + ".ovpn");
+                }
+
+                try (FileOutputStream fos = new FileOutputStream(configFile)) {
+                    fos.write(configData);
+                }
+
+                Uri contentUri = FileProvider.getUriForFile(
+                        this, FILE_PROVIDER_AUTHORITY, configFile);
+
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(contentUri, "application/x-openvpn-profile");
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                mainHandler.post(() -> {
+                    try {
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        Log.w(TAG, "No OpenVPN app found", e);
+                        Toast.makeText(MainActivity.this,
+                                R.string.error_no_openvpn_app,
+                                Toast.LENGTH_LONG).show();
+                    }
+                });
+
+            } catch (IOException e) {
+                Log.e(TAG, "Error writing VPN config", e);
+                mainHandler.post(() -> Toast.makeText(MainActivity.this,
+                        R.string.error_file_creation, Toast.LENGTH_SHORT).show());
             }
-            String baseFilename = "vpngate_" + server.getIp().replace(".", "_");
-            File newFile = new File(cachePath, baseFilename + ".ovpn");
-            if (newFile.exists()) {
-                newFile = new File(cachePath, baseFilename + "_" + System.currentTimeMillis() + ".ovpn");
-            }
-
-            try (FileOutputStream fos = new FileOutputStream(newFile)) {
-                fos.write(configData);
-            }
-
-            Uri contentUri = FileProvider.getUriForFile(this, "com.example.vpngateviewer.fileprovider", newFile);
-
-            Intent intent = new Intent(Intent.ACTION_VIEW);
-            intent.setDataAndType(contentUri, "application/x-openvpn-profile");
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-
-            startActivity(intent);
-
-        } catch (IOException | IllegalArgumentException e) {
-            e.printStackTrace();
-            Toast.makeText(this, "Error processing VPN config: " + e.getMessage(), Toast.LENGTH_LONG).show();
-        } catch (Exception e) {
-            e.printStackTrace();
-            Toast.makeText(this, "Could not open VPN profile. Do you have an OpenVPN app installed?", Toast.LENGTH_LONG).show();
-        }
+        });
     }
+
+    // ---- listener callbacks ----
 
     @Override
     public void onServerClick(VpnServer server) {
@@ -234,10 +298,13 @@ public class MainActivity extends AppCompatActivity implements VpnServerListFrag
         } else {
             favoriteServerKeys.remove(key);
         }
-        getSharedPreferences("vpn_prefs", MODE_PRIVATE)
+        getSharedPreferences(PREF_NAME, MODE_PRIVATE)
                 .edit()
-                .putStringSet("favorite_servers", new HashSet<>(favoriteServerKeys))
+                .putStringSet(KEY_FAVORITE_SERVERS, new HashSet<>(favoriteServerKeys))
                 .apply();
-        Toast.makeText(this, server.isFavorite() ? "Added to favorites" : "Removed from favorites", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this,
+                server.isFavorite() ? R.string.toast_favorite_added
+                                    : R.string.toast_favorite_removed,
+                Toast.LENGTH_SHORT).show();
     }
 }

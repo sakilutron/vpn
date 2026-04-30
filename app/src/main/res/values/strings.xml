@@ -2,4 +2,15 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">VPN Gate Viewer</string>
     <string name="favorite">Favorite</string>
+
+    <!-- Errors -->
+    <string name="error_load_failed">Failed to load VPN server data. Please try again later.</string>
+    <string name="error_no_servers">No VPN servers found.</string>
+    <string name="error_no_config">No OpenVPN config available for this server.</string>
+    <string name="error_no_openvpn_app">Could not open VPN profile. Do you have an OpenVPN app installed?</string>
+    <string name="error_file_creation">Error creating VPN profile file.</string>
+
+    <!-- Toast messages -->
+    <string name="toast_favorite_added">Added to favorites</string>
+    <string name="toast_favorite_removed">Removed from favorites</string>
 </resources>
